@@ -6,4 +6,4 @@ Images/*
 data/centroids/*
 sketch/simul_tmps/*
 *.pt
-*.pth
+*.pth 

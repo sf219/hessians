@@ -10,7 +10,7 @@ from compute_q.compute_Q_pytorch import compute_Q_clip
 from sklearn.cluster import KMeans
 import random
 
-N = (4, 8, 16)
+N = (4, 8, 16) 
 n_cwd = 4
 true_N = (256, 256)
 

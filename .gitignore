@@ -1,0 +1,9 @@
+Images/*
+*.pyc
+*.pyo
+*.pyd
+*.so
+data/centroids/*
+sketch/simul_tmps/*
+*.pt
+*.pth

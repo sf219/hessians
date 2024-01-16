@@ -311,7 +311,7 @@ class Net(nn.Module):
 
 def mnist_loss_layer(img1, img2, layer):
     model_conv = Net()
-    #model_conv.load_state_dict(torch.load("mnist_cnn.pt"))
+    model_conv.load_state_dict(torch.load("mnist_cnn_1.pt"))
     model_conv.eval().to(device)
 
     if (layer == 0):

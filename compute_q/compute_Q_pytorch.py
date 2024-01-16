@@ -13,7 +13,7 @@ class compute_Q():
         self.true_N = true_N
         self.n_cwd = n_cwd
         self.N = N
-        self.sampling_depth = 128
+        self.sampling_depth = 512
 
         name_target = self.name_target()
         str_load = 'data/centroids/centroids_' + name_target + '_' + str(n_cwd) + '_' + str(true_N) + '_' + str(N) + '.npy'

@@ -64,9 +64,6 @@ dataset2 = datasets.MNIST('../data', train=False,
                     transform=transform)
 test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-model = torch.load("sketch/models/mnist_cnn.pth")
-
-model.eval()
 test_loss = 0
 correct = 0
 
@@ -90,6 +87,9 @@ for data, target in test_loader:
         H = compute_Q_obj.compute_exact_hessian(img, lay)
         true_ood[4-lay, iters] = (np.sum(np.square(H)) - np.sum(np.square(np.diag(H)))) / (np.sum(np.square(H)))
         est_ood[4-lay, iters] = compute_Q_obj.compute_ood(img, lay).item()
+
+    print('Estimated OOD: ', est_ood[:, iters])
+    print('True OOD: ', true_ood[:, iters])
 
 # box plot both
 

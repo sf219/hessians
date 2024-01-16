@@ -20,7 +20,7 @@ compute_Q_obj_lpips = compute_Q_lpips(true_N=true_N, n_cwd=n_cwd, N=N[0])
 
 path = 'Images/CLIC/Training/'
 dirs = os.listdir(path)
-num_images = 250
+num_images = 50
 random.seed(0)
 random.shuffle(dirs)
 dirs = dirs[:num_images]
@@ -47,6 +47,7 @@ for img_name in dirs:
     print('BRISQUE: ', ood_brisque[ind_image])
     print('LPIPS: ', ood_lpips[ind_image])
 
+np.savez('ood_values.npz', ood_ssim=ood_ssim, ood_msssim=ood_msssim, ood_brisque=ood_brisque, ood_lpips=ood_lpips)
 plt.figure()
 plt.boxplot([ood_ssim, ood_msssim, ood_brisque, ood_lpips])
 plt.xticks([1, 2, 3, 4], ['SSIM', 'MSSSIM', 'BRISQUE', 'LPIPS'], fontsize=16)

@@ -7,3 +7,8 @@ data/centroids/*
 sketch/simul_tmps/*
 *.pt
 *.pth 
+*.npz
+*.pdf
+*.pth
+*.mat
+*.ckpt

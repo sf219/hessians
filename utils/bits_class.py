@@ -80,6 +80,7 @@ def compute_bits_omega(trans, N=8):
         dccof = np.concatenate((dccof, t2))
     breakpoint()    
 
+
 def compute_bits(trans, N=8):
     nb = trans.shape[0]//N
     mb = trans.shape[1]//N
@@ -119,6 +120,43 @@ def compute_bits(trans, N=8):
     bits_ac = bits_ac
     bpps = bits_ac + bits_dc
     return bpps, bits_ac, bits_dc
+
+
+def compute_bits_block(trans, N=8):
+    nb = trans.shape[0]//N
+    mb = trans.shape[1]//N
+    tmp = trans[::N, ::N]
+    dccof = np.zeros((0), dtype=int)
+    eobis = []
+    fdpcm = dpcm_smart(tmp)
+    bits = np.zeros((nb, mb))
+    for i in range(nb):
+        for j in range(mb):
+            t2 = jdcenc(np.array([fdpcm[i, j]]))
+            dccof = np.concatenate((dccof, t2))
+            #bits[i, j] += len(t2)
+    bits_ac = 0
+    count = 0
+    no_zeros = 0
+    for i in range(nb):
+        for j in range(mb):
+            tmp = trans[i*N:(i+1)*N, j*N:(j+1)*N]
+            vec_tmp = np.ravel(tmp, 'F')
+            if (np.all(vec_tmp == 0)):
+                bits_ac += 4
+                continue
+            eobi = np.where(vec_tmp != 0)[0][-1]
+            eobis.append(eobi)
+            tmp_dp = vec_tmp[1:eobi+1]
+            no_zeros += np.sum(tmp_dp!=0)
+            tocat = np.append(tmp_dp, 999).astype(int)
+            if len(tmp_dp)>0:
+                if (tmp_dp[0] == 0):
+                    count+=1
+                #    print(tocat)
+            seq = jacenc(tocat)
+            bits[i, j] += len(seq)
+    return bits
 
 
 def subband_encoder(trans, N=8):

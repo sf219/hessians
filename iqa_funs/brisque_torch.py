@@ -201,6 +201,9 @@ def _aggd_parameters(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch
     left_sigma = ((x * mask_left).pow(2).sum(dim=(-1, -2)) / count_left).sqrt()
     right_sigma = ((x * mask_right).pow(2).sum(dim=(-1, -2)) / count_right).sqrt()
 
+    if (left_sigma==0).any() or (right_sigma==0).any():
+        breakpoint()
+        
     assert (left_sigma > 0).all() and (right_sigma > 0).all(), f'Expected non-zero left and right variances, ' \
                                                                f'got {left_sigma} and {right_sigma}'
 

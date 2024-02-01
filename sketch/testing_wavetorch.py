@@ -27,7 +27,7 @@ compute_Q_obj_lpips = compute_Q_lpips(true_N=true_N, n_cwd=n_cwd, N=N[0])
 
 path = 'Images/CLIC/Training/'
 dirs = os.listdir(path)
-num_images = 30
+num_images = 20
 random.seed(0)
 random.shuffle(dirs)
 dirs = dirs[:num_images]
@@ -49,15 +49,15 @@ for img_name in dirs:
     print('Image: ', (ind_image), 'Number of images: ', (len(dirs)))
     img, depth = read_image_resize_rect(path+img_name, true_N)
     img = img[:, :, 0].squeeze()
-    ood_ssim[ind_image] = compute_Q_obj_ssim.sample_ood(img)
-    ood_msssim[ind_image] = compute_Q_obj_msssim.sample_ood(img)
-    ood_brisque[ind_image] = compute_Q_obj_brisque.sample_ood(img)
-    ood_lpips[ind_image] = compute_Q_obj_lpips.sample_ood(img)
+    ood_ssim[ind_image] = compute_Q_obj_ssim.sample_half_ood(img)
+    ood_msssim[ind_image] = compute_Q_obj_msssim.sample_half_ood(img)
+    ood_brisque[ind_image] = compute_Q_obj_brisque.sample_half_ood(img)
+    ood_lpips[ind_image] = compute_Q_obj_lpips.sample_half_ood(img)
 
-    ood_ssim_dwt[ind_image] = compute_Q_obj_ssim_dwt.sample_ood(img)
-    ood_msssim_dwt[ind_image] = compute_Q_obj_msssim_dwt.sample_ood(img)
-    ood_brisque_dwt[ind_image] = compute_Q_obj_brisque_dwt.sample_ood(img)
-    ood_lpips_dwt[ind_image] = compute_Q_obj_lpips_dwt.sample_ood(img)
+    ood_ssim_dwt[ind_image] = compute_Q_obj_ssim_dwt.sample_half_ood(img)
+    ood_msssim_dwt[ind_image] = compute_Q_obj_msssim_dwt.sample_half_ood(img)
+    ood_brisque_dwt[ind_image] = compute_Q_obj_brisque_dwt.sample_half_ood(img)
+    ood_lpips_dwt[ind_image] = compute_Q_obj_lpips_dwt.sample_half_ood(img)
 
 
     print('SSIM: ', ood_ssim[ind_image])

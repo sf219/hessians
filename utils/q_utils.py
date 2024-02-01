@@ -57,7 +57,7 @@ def ssim_func(img1, img2):
     pad = (11-1)//2+1
     img1 = preprocess(img1, pad)
     img2 = preprocess(img2, pad)
-    return ssim_module(img1, img2)
+    return 1-ssim_module(img1, img2)
 
 
 def ms_ssim_func(img1, img2):
@@ -83,7 +83,7 @@ def ms_ssim_func(img1, img2):
     ssim_per_channel = torch.relu(ssim_per_channel)  # type: ignore  # (batch, channel)
     mcs_and_ssim = torch.stack(msssim + [ssim_per_channel], dim=0)  # (level, batch, channel)
     ms_ssim_val = torch.prod(mcs_and_ssim ** weights.view(-1, 1, 1), dim=0)
-    return ms_ssim_val.mean()
+    return 1-ms_ssim_val.mean()
 
 
 def haarpsi_func(img1, img2):
@@ -100,9 +100,8 @@ def brisque_func(img1, img2):
     bris_2 = brisque(img2, data_range=2, kernel_size=kernel_size)
     diff = (bris_2 - bris_1) - 20
     term_2 = 1/2 * (diff + torch.sqrt(torch.square(diff) + 1e-4))
-    #val = torch.randn(1, requires_grad=True).to(img1.device)
-    #term_2 = torch.maximum(bris_2 - bris_1 + val, torch.tensor(0)) - val
     #term_2 = (bris_2 - bris_1)**2
+   # term_2 = torch.maximum(bris_2 - bris_1, torch.tensor(0))
     return term_2
 
 def clip_func(img1, img2):
@@ -146,48 +145,47 @@ def resnet_loss(img1, img2):
     emb_2_d = embedding_4(img2)
 
     #with torch.no_grad():
-    norm_1_a = (torch.mean(torch.square(emb_1_a)))
-    norm_1_b = (torch.mean(torch.square(emb_1_b)))
-    norm_1_c = (torch.mean(torch.square(emb_1_c)))
-    norm_1_d = (torch.mean(torch.square(emb_1_d)))
+    norm_1_a = (torch.mean(torch.square(emb_1_a), axis=1, keepdims=True))
+    norm_1_b = (torch.mean(torch.square(emb_1_b), axis=1, keepdims=True))
+    norm_1_c = (torch.mean(torch.square(emb_1_c), axis=1, keepdims=True))
+    norm_1_d = (torch.mean(torch.square(emb_1_d), axis=1, keepdims=True))
 
-    norm_2_a = (torch.mean(torch.square(emb_2_a)))
-    norm_2_b = (torch.mean(torch.square(emb_2_b)))
-    norm_2_c = (torch.mean(torch.square(emb_2_c)))
-    norm_2_d = (torch.mean(torch.square(emb_2_d)))
+    norm_2_a = (torch.mean(torch.square(emb_2_a), axis=1, keepdims=True))
+    norm_2_b = (torch.mean(torch.square(emb_2_b), axis=1, keepdims=True))
+    norm_2_c = (torch.mean(torch.square(emb_2_c), axis=1, keepdims=True))
+    norm_2_d = (torch.mean(torch.square(emb_2_d), axis=1, keepdims=True))
 
-    norm_a = torch.sqrt((norm_1_a + norm_2_a)/2)
-    norm_b = torch.sqrt((norm_1_b + norm_2_b)/2)
-    norm_c = torch.sqrt((norm_1_c + norm_2_c)/2)
-    norm_d = torch.sqrt((norm_1_d + norm_2_d)/2)
+    
+    emb_1_a = emb_1_a / norm_1_a
+    emb_1_b = emb_1_b / norm_1_b
+    emb_1_c = emb_1_c / norm_1_c
+    emb_1_d = emb_1_d / norm_1_d
 
-    emb_1_a = emb_1_a / norm_a
-    emb_1_b = emb_1_b / norm_b
-    emb_1_c = emb_1_c / norm_c
-    emb_1_d = emb_1_d / norm_d
-
-    emb_2_a = emb_2_a / norm_a
-    emb_2_b = emb_2_b / norm_b
-    emb_2_c = emb_2_c / norm_c
-    emb_2_d = emb_2_d / norm_d
-
-    emb_1_a = emb_1_a.ravel()
-    emb_1_b = emb_1_b.ravel()
-    emb_1_c = emb_1_c.ravel()
-    emb_1_d = emb_1_d.ravel()
-
-    emb_2_a = emb_2_a.ravel()
-    emb_2_b = emb_2_b.ravel()
-    emb_2_c = emb_2_c.ravel()
-    emb_2_d = emb_2_d.ravel()
+    emb_2_a = emb_2_a / norm_2_a
+    emb_2_b = emb_2_b / norm_2_b
+    emb_2_c = emb_2_c / norm_2_c
+    emb_2_d = emb_2_d / norm_2_d
 
     w = 0.05
     # concatenate embeddings
     #emb_1 = torch.cat(((w**3)*emb_1_a, (w**2)*emb_1_b, w*emb_1_c, emb_1_d), dim=0)
     #emb_2 = torch.cat(((w**3)*emb_2_a, (w**2)*emb_2_b, w*emb_2_c, emb_2_d), dim=0)
+ 
+    """
     emb_1 = emb_1_d
     emb_2 = emb_2_d
-    return torch.mean(torch.square(emb_1 - emb_2))
+
+    term_1 = torch.sum(torch.square(emb_1 - emb_2), axis=1)
+    out = torch.mean(term_1)
+    """
+    
+    emb_1 = emb_1_d
+    emb_2 = emb_2_d
+
+    term_1 = torch.sum(torch.square(emb_1 - emb_2), axis=1)
+    out = torch.mean(term_1)
+    
+    return out
 
 
 def resnet_loss_layer(img1, img2, layer):
@@ -237,6 +235,46 @@ def alexnet_loss_layer(img1, img2, layer):
     emb_1 = embedding(img1)
     emb_2 = embedding(img2)
     return torch.mean(torch.square(emb_1 - emb_2))
+
+
+def jacobian_loss(img1):
+    #embedding = torch.nn.Sequential(*(list(model_conv.children())[:-1])).to(device)
+    #embedding_2 = torch.nn.Sequential(*(list(model_conv.children())[:-2])).to(device)
+    #embedding_3 = torch.nn.Sequential(*(list(model_conv.children())[:-3])).to(device)
+    embedding_4 = torch.nn.Sequential(*(list(model_conv.children())[:])).to(device)
+
+    #embedding.eval()
+    #embedding_2.eval()
+    #embedding_3.eval()
+    embedding_4.eval()
+
+    #emb_1_a = embedding(img1)
+    #emb_1_b = embedding_2(img1)
+    #emb_1_c = embedding_3(img1)
+    emb_1_d = embedding_4(img1)
+
+    #with torch.no_grad():
+    #norm_1_a = (torch.mean(torch.square(emb_1_a)))
+    #norm_1_b = (torch.mean(torch.square(emb_1_b)))
+    #norm_1_c = (torch.mean(torch.square(emb_1_c)))
+    #norm_1_d = (torch.mean(torch.square(emb_1_d)))
+
+    #emb_1_a = emb_1_a / norm_1_a
+    #emb_1_b = emb_1_b / norm_1_b
+    #emb_1_c = emb_1_c / norm_1_c
+    #emb_1_d = emb_1_d / norm_1_d
+
+    #emb_1_a = emb_1_a.ravel()
+    #emb_1_b = emb_1_b.ravel()
+    #emb_1_c = emb_1_c.ravel()
+    emb_1_d = emb_1_d.ravel()
+
+    #w = 0.05
+    # concatenate embeddings
+    #emb_1 = torch.cat(((w**3)*emb_1_a, (w**2)*emb_1_b, w*emb_1_c, emb_1_d), dim=0)
+    #emb_2 = torch.cat(((w**3)*emb_2_a, (w**2)*emb_2_b, w*emb_2_c, emb_2_d), dim=0)
+    emb_1 = emb_1_d
+    return emb_1
 
 
 class Net(nn.Module):

@@ -6,7 +6,8 @@ import numpy as np
 from utils.utils_lpit import read_image_resize_rect
 import os
 import matplotlib.pyplot as plt
-from compute_q.compute_Q_pytorch import compute_Q_msssim as compute_Q_class
+from compute_q.compute_Q_jax import compute_Q_lpips as compute_Q_class
+from handling_q.q_ops import q_ops_lpips as compute_ops_class
 
 import random
 from iqa_funs.brisque_torch import brisque
@@ -14,7 +15,7 @@ import torch
 from utils.q_utils import ssim_func, ms_ssim_func, compute_LPIPS_gs
 
 n_cwd = 4
-true_N = (256, 256)
+true_N = (1024, 1024)
 nqs = 6
 N = 8
 
@@ -23,8 +24,9 @@ N = 8
 flag_uniform = True
 
 jpeg = JPEG(nqs, uniform=flag_uniform, N=8)
-compute_Q_obj = compute_Q_class(true_N=true_N, n_cwd=n_cwd, N=8)
-nsqjpeg = NSQJPEG(compute_Q_obj, nqs=nqs, N=N, uniform=flag_uniform)
+compute_Q_obj = compute_Q_class(true_N, sampling_depth=4)
+q_ops_obj = compute_ops_class(true_N=true_N, n_cwd=n_cwd, N=8)
+nsqjpeg = NSQJPEG(compute_Q_obj, q_ops_obj, nqs=nqs, N=N, uniform=flag_uniform)
 
 
 def compress_JPEG(qual_lev, img):

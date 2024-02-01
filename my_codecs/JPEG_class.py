@@ -13,12 +13,15 @@ class JPEG(SIC):
 
     def proy_Q_table(self):
         self.Q = []
+        self.chroma_Q = []
         for j in range(self.nqs):
             self.Q.append(90*self.base_Q*self.quant[j])
+            self.chroma_Q.append(90*self.base_C*self.quant[j])
 
     def set_Q(self, input):
         input = input.astype(np.float64)
         self.ind_closest = np.zeros((input.shape[0]//self.N, input.shape[1]//self.N))
+        self.ind_closest_420 = np.zeros((input.shape[0]//(2*self.N), input.shape[1]//(2*self.N)))
         self.overhead_bits = 0
 
     def quant_layer(self, blk, Q, ind=None):

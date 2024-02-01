@@ -2,7 +2,7 @@ import numpy as np
 from utils.utils_lpit import read_image_resize_rect
 import os
 import matplotlib.pyplot as plt
-from compute_q.compute_Q_machines import compute_Q_layer_alex as compute_Q
+from compute_q.compute_Q_pytorch import compute_Q_layer as compute_Q
 from sklearn.cluster import KMeans
 import random
 from torchvision import transforms
@@ -51,10 +51,8 @@ remove_first, _ = next(iter(dataloaders['val']))
 
 for ind_image in range(num_images):
     print('Image: ', (ind_image), 'Number of images: ', num_images)
-    img_show, _ = next(iter(dataloaders['val']))
-    img_norm = data_normalize(img_show)
-    img_show = img_show[0, :, :, :].numpy()
-    img = img_norm[0, :, :, :].numpy()
+    img_org, _ = next(iter(dataloaders['val']))
+    img_show = img_org[0, :, :, :].numpy()
     plt.figure()
     plt.subplot(2, 3, 1)
     img_show = img_show.transpose((1, 2, 0))
@@ -65,14 +63,14 @@ for ind_image in range(num_images):
     plt.colorbar()
     titles = ['Block 1', 'Block 2', 'Block 3', 'Block 4', 'Avg. Pool']
     for lay in range(5):
-        Q = compute_Q_obj.sample_q_train_ip(img, lay)
+        Q = compute_Q_obj.sample_q_diag_radamacher_train(img_org, lay)
         plt.subplot(2, 3, 6-lay)
         plt.imshow(Q)
         plt.title(titles[4-lay])
         plt.xticks([])
         plt.yticks([])
         plt.colorbar()
-    plt.suptitle('Inner product. Image: ' + str(ind_image))
+    plt.suptitle('Diagonal. Image: ' + str(ind_image))
 
     plt.figure()
     plt.subplot(2, 3, 1)
@@ -83,12 +81,12 @@ for ind_image in range(num_images):
     plt.colorbar()
     titles = ['Block 1', 'Block 2', 'Block 3', 'Block 4', 'Avg. Pool']
     for lay in range(5):
-        Q = compute_Q_obj.sample_q_train_diag(img, lay)
+        Q = compute_Q_obj.sample_q_ip_radamacher_train(img_org, lay)
         plt.subplot(2, 3, 6-lay)
         plt.imshow(Q)
         plt.title(titles[4-lay])
         plt.xticks([])
         plt.yticks([])
         plt.colorbar()
-    plt.suptitle('Diagonal. Image: ' + str(ind_image))
+    plt.suptitle('Inner product. Image: ' + str(ind_image))
     plt.show()

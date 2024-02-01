@@ -5,7 +5,7 @@ from my_codecs.NSQJPEG import NSQJPEG
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-from compute_q.compute_Q_machines import compute_Q_machines as compute_Q_class
+from compute_q.compute_Q_pytorch import compute_Q_resnet18 as compute_Q_class
 
 import torch
 from torchvision import datasets, transforms
@@ -15,7 +15,6 @@ from utils.utils_lpit import rgb2ycbcr, ycbcr2rgb
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 classifier = torch.load('sketch/models/transfer_insects.pth')
-classifier = classifier.eval()
 
 train_name = 'train'
 test_name = 'val'
@@ -158,18 +157,13 @@ bits_nsqjpeg = np.zeros_like(bits)
 
 for i in range(num_images):
     try:
-        img, label = next(iter(dataloaders_nonorm[test_name]))
+        img_org, label = next(iter(dataloaders_nonorm[test_name]))
     except:
         break
 
-    img_norm = data_normalize(img)
-
-    img = img[0, :, :, :].numpy()
+    img = img_org[0, :, :, :].numpy()
     img = img.transpose((1, 2, 0))
-
-    img_norm = img_norm[0, :, :, :].numpy()
-
-    nsqjpeg.set_Q(img_norm, one_depth=False)
+    nsqjpeg.set_Q(img_org, one_depth=False)
     jpeg.set_Q(img)
 
     right_vals[:, i] = evaluate_classifier(img, label)
@@ -177,12 +171,15 @@ for i in range(num_images):
     print('Image: ', (i), 'Number of images: ', num_images, 'Label: ', label.item(), 'Original prediction right: ', right_vals[0, i])
     img_yuv = rgb2ycbcr(img)
     for j in range(nqs):
+            
         qual_idx = j
         comp_img_jpeg, bits_tmp = compress_JPEG(j, img_yuv)
         comp_img_nsqjpeg, bits_nsqjpeg_tmp = compress_NSQJPEG(j, img_yuv)
-
         comp_img_jpeg = ycbcr2rgb(comp_img_jpeg) / 255
         comp_img_nsqjpeg = ycbcr2rgb(comp_img_nsqjpeg) / 255
+        if (j == 0):
+            im_plot_jpeg = comp_img_jpeg
+            im_plot_nsqjpeg = comp_img_nsqjpeg
         right_vals_jpeg[j, i] = evaluate_classifier(comp_img_jpeg, label)
         right_vals_nsqjpeg[j, i] = evaluate_classifier(comp_img_nsqjpeg, label)
 
@@ -250,13 +247,13 @@ for i in range(num_images):
     plt.xticks([])
     plt.yticks([])
     plt.subplot(1, 5, 3)
-    im = plt.imshow(comp_img_jpeg)
+    im = plt.imshow(im_plot_jpeg)
     plt.colorbar(im)
     plt.title('JPEG')
     plt.xticks([])
     plt.yticks([])
     plt.subplot(1, 5, 4)
-    im = plt.imshow(comp_img_nsqjpeg)
+    im = plt.imshow(im_plot_nsqjpeg)
     plt.colorbar(im)
     plt.title('NSQJPEG')
     plt.xticks([])

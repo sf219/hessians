@@ -8,6 +8,44 @@ from scipy.stats import vonmises
 import math
 from scipy.interpolate import interp2d
 
+def reshape_image_blocks(image, block_size):
+    # Get the shape of the original image
+    height, width = image.shape
+
+    # Calculate the number of blocks in both dimensions
+    num_blocks_height = height // block_size
+    num_blocks_width = width // block_size
+
+    # Reshape the image into blocks
+    reshaped_image = np.reshape(image[:num_blocks_height * block_size, :num_blocks_width * block_size],
+                                  (num_blocks_height, block_size, num_blocks_width, block_size))
+
+    # Transpose to have blocks in the first and third dimensions
+    reshaped_image = np.transpose(reshaped_image, (0, 2, 1, 3))
+
+    # Reshape to get the final result
+    reshaped_image = np.reshape(reshaped_image, (num_blocks_height * num_blocks_width, block_size, block_size))
+
+    return reshaped_image
+
+def invert_reshape_image_blocks(reshaped_image, original_shape, block_size):
+    # Get the shape of the original image
+    num_blocks, _, _ = reshaped_image.shape
+
+    # Calculate the number of blocks in both dimensions
+    num_blocks_height, num_blocks_width = original_shape[0] // block_size, original_shape[1] // block_size
+
+    # Reshape back to 4D array
+    reshaped_image = reshaped_image.reshape((num_blocks_height, num_blocks_width, block_size, block_size))
+
+    # Transpose to have blocks in the first and third dimensions
+    reshaped_image = np.transpose(reshaped_image, (0, 2, 1, 3))
+
+    # Reshape back to the original image
+    original_image = reshaped_image.reshape((num_blocks_height * block_size, num_blocks_width * block_size))
+
+    return original_image
+
 def quantization_model(Q, q):
     return np.min(Q)*q
 
@@ -27,7 +65,17 @@ def get_quantization_table(N):
     y_new = np.linspace(0, base_Q.shape[1], N)
     base_Q = np.round(f(x_new, y_new))
     base_Q = base_Q / np.min(base_Q)
-    return base_Q
+
+    c_table = np.empty((8, 8), dtype=np.float32)
+    c_table.fill(99)
+    c_table[:4, :4] = np.array([[17, 18, 24, 47], [18, 21, 26, 66],
+                            [24, 26, 56, 99], [47, 66, 99, 99]]).T
+    f = interp2d(x, y, c_table, kind='cubic')
+    x_new = np.linspace(0, c_table.shape[0], N)
+    y_new = np.linspace(0, c_table.shape[1], N)
+    c_table = np.round(f(x_new, y_new))
+    c_table = c_table / np.min(c_table)
+    return base_Q, c_table
 
 def zigzag(n):
     '''zigzag rows'''

@@ -2,11 +2,14 @@ import numpy as np
 from utils.utils_lpit import unifgrid
 from utils.utils_lpit import inv_zig_zag
 from scipy.fftpack import dct
-from utils.utils_lpit import matlab_round
+from utils.q_utils_jax import matlab_round
 from scipy.linalg import eigh
-from my_codecs.SIC_class import SIC
+from my_codecs.SIC_jax import SIC
 from utils.bits_class import compute_bits, dpcm_smart
-from utils.coding_library import jacenc
+from utils.coding_library import dpcm, rlgr, jdcenc, jacenc
+from functools import partial
+import jax
+import jax.numpy as jnp
 
 # we are working with JPEG, so it's safe to set N = 8
 N = 8
@@ -74,6 +77,8 @@ def proy_Q_table(table, basis):
     return produ
 
 
+
+
 class NSQJPEG(SIC):
 
     def __init__(self, compute_Q_obj, q_ops_obj, nqs=12, N=8, center=True, uniform=True):
@@ -90,25 +95,22 @@ class NSQJPEG(SIC):
     def proy_Q_table(self):
         self.Q = []
         self.chroma_Q = []
+        D = dct(np.eye(self.N), norm='ortho', axis=0).T
+        D = np.kron(D, D)
         for j in range(self.nqs):
             qf = self.quant[j]
             Q_inner = []
             chroma_Q_inner = []
             for i in range(self.q_ops_obj.n_cwd):
                 U = self.eigvecs_list[i]
-                produ_Q = proy_Q_table(self.base_Q, U)
-                produ_C = proy_Q_table(self.base_C, U)
-                
-                """
-                if self.uniform is True:
-                    produ_Q = np.ones((N, N))
-                    produ_C = np.ones((N, N))
-                """
-                table_Q = qf*90*produ_Q
-                table_C = qf*90*produ_C
 
-                Q_inner.append(table_Q)
-                chroma_Q_inner.append(table_C)
+                produ = proy_Q_table(self.base_Q, U)
+                table = qf*90*produ
+                Q_inner.append(table)
+
+                produ = proy_Q_table(self.base_C, U)
+                table = qf*90*produ
+                chroma_Q_inner.append(table)
             self.Q.append(Q_inner)
             self.chroma_Q.append(chroma_Q_inner)
 
@@ -129,14 +131,14 @@ class NSQJPEG(SIC):
             self.q_mtx.append(np.diag(q_val.ravel('F')))
             self.eigvals_list.append(eigvals)
 
-    def set_Q(self, input, one_depth=True, lbr_mode=False):
+    def set_Q(self, input, one_depth=True):
         if (one_depth is True):
             if (len(input.shape) == 3):
                 input = input[:, :, 0]
         self.Qmtx = self.compute_Q_obj.sample_q(input)
         self.Qmtx = self.q_ops_obj.normalize_q(self.Qmtx)
         self.q_ops_obj.quantize_q(self.Qmtx)
-        self.q_ops_obj.choose_ncwd(lbr_mode)
+        self.q_ops_obj.choose_ncwd()
         self.overhead_bits = self.q_ops_obj.overhead_bits
         print(' overhead bits: ', self.overhead_bits)
         self.centroids = self.q_ops_obj.centroids
@@ -145,38 +147,57 @@ class NSQJPEG(SIC):
         self.Q_quantized = self.q_ops_obj.Q
         self.set_basis()
 
+    def set_Q_qual_level(self, qual_level):
+        self.q_ops_obj.choose_ncwd_qlevel(qual_level)
+        self.overhead_bits = self.q_ops_obj.overhead_bits
+        print('level:', qual_level, ' overhead bits: ', self.overhead_bits)
+        self.centroids = self.q_ops_obj.centroids
+        self.ind_closest = self.q_ops_obj.ind_closest
+        self.ind_closest_420 = self.q_ops_obj.ind_closest_420
+        self.Q = self.q_ops_obj.Q
+
+    @partial(jax.jit, static_argnums=(0,))
     def quant_layer(self, blk, Q, ind=None):
-        Q_norm = Q[ind]
+        Q_norm = jnp.array(Q)[ind]
         quant_blk = matlab_round(128*blk/Q_norm)
         return quant_blk
     
+    @partial(jax.jit, static_argnums=(0,))
     def dequant_layer(self, quant_blk, Q, ind=None):
-        Q_norm = Q[ind]
+        Q_norm = jnp.array(Q)[ind]
         dequant_blk = quant_blk*Q_norm/128
         return dequant_blk
 
+    @partial(jax.jit, static_argnums=(0,))
     def fwd_transform(self, blk, ind):
-        Q = self.q_mtx[ind]
-        U = self.eigvecs_list[ind]
+        Q = jnp.array(self.q_mtx)[ind]
+        U = jnp.array(self.eigvecs_list)[ind]
         trans_blk = U.T @ Q @ blk.ravel('F')
         return trans_blk.reshape(blk.shape, order='F')
     
+    @partial(jax.jit, static_argnums=(0,))
     def inv_transform(self, blk, ind):
-        U = self.eigvecs_list[ind]
+        U = jnp.array(self.eigvecs_list)[ind]
         bck_trans = U @ blk.ravel('F')
         return bck_trans.reshape(blk.shape, order='F')
 
 
     def compute_bits_means(self, input, Q_list):
         coefs_means = np.zeros((input.shape[0]//self.N, input.shape[1]//self.N, self.q_ops_obj.n_cwd))
-        for i in range(0, input.shape[0], self.N):
-            for j in range(0, input.shape[1], self.N):
-                for k in range(self.q_ops_obj.n_cwd):
+
+        for k in range(self.q_ops_obj.n_cwd):
+            Q_mtx = self.q_mtx[k]
+            U_vec = self.eigvecs_list[k]
+
+            def compute_dc(blk):
+                tmp = U_vec[:, 0].T @ Q_mtx @ blk.ravel('F') 
+                return matlab_round(128*tmp/(Q_list[k][0, 0]))
+            
+            for i in range(0, input.shape[0], self.N):
+                for j in range(0, input.shape[1], self.N):
                     blk = input[i:i+self.N, j:j+self.N]
-                    Q_mtx = self.q_mtx[k]
-                    U_vec = self.eigvecs_list[k]
-                    tmp = U_vec[:, 0].T @ Q_mtx @ blk.ravel('F') 
-                    coefs_means[i//self.N, j//self.N, k] = matlab_round(128*tmp/(Q_list[k][0, 0]))
+                    coefs_means[i//self.N, j//self.N, k] = compute_dc(blk)
+
         coefs_means_in = coefs_means
         for k in range(self.q_ops_obj.n_cwd):
             coefs_means[:, :, k] = dpcm_smart(coefs_means_in[:, :, k].squeeze())

@@ -6,8 +6,8 @@ import numpy as np
 from utils.utils_lpit import read_image_resize_rect, ycbcr2rgb 
 import os
 import matplotlib.pyplot as plt
-from compute_q.compute_Q_jax import compute_Q_msssim as compute_Q_class
-from handling_q.q_ops import q_ops_msssim as compute_ops_class
+from compute_q.compute_Q_jax import compute_Q_ssim as compute_Q_class
+from handling_q.q_ops import q_ops_ssim as compute_ops_class
 
 import random
 from iqa_funs.brisque_torch import brisque
@@ -139,7 +139,6 @@ for i in range(num_images):
 
     jpeg.set_Q(img)
     nsqjpeg.set_Q(img, one_depth=True)
-    nsqjpeg.set_basis()
 
     bits_img = []
     bits_img_savc = []
@@ -161,7 +160,6 @@ for i in range(num_images):
     plt.title('Qmtx', fontsize=16)
     plt.colorbar(im)
     for j in range(nqs):
-
         qual_idx = j
         comp_img_jpeg, bits_tmp = compress_JPEG(j, img)
         comp_img_nsqjpeg, bits_nsqjpeg_tmp = compress_NSQJPEG(j, img)
@@ -201,7 +199,7 @@ for i in range(num_images):
     plt.plot(total_bits_nsqjpeg, mse_vals_nsqjpeg[:, i], label='NSQJPEG', linewidth=3)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
-    plt.legend(fontsize = 16)
+    plt.legend(fontsize=16)
     plt.title('MSE', fontsize=16)
     plt.subplot(2, 2, 2)
     plt.plot(total_bits, msssim_vals[:, i], label='JPEG', linewidth=3)

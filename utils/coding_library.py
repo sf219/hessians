@@ -215,22 +215,24 @@ def bin2int(b):
         mult = (mult>>1)
     return out
 
+@njit("int32[:, :](int32[:, :], int8)")
 def dpcm(x, a):
+    #x = x.astype(np.int64)
     m, nx = x.shape
     if hasattr(a, "__len__"):
         p, na = a.shape
     else:
         p = 1
         na = 1
-    r = np.zeros_like(x)
-    xtilde = np.zeros_like(x)
-    r[0:p] = matlab_round(x[0:p])
+    r = np.zeros((m, nx), dtype=np.int32)
+    xtilde = np.zeros((m, nx), dtype=np.int32)
+    r[0:p] = np.round(x[0:p])
     xtilde[0:p] = r[0:p]
     for t in range(p, m, 1):
         xhat = np.sum(a*np.flip(xtilde[t-p:t]))
-        r[t] = matlab_round(x[t] - xhat)
+        r[t] = np.round(x[t] - xhat)
         xtilde[t] = r[t] + xhat 
-    return r, xtilde   
+    return r
 
 # numbers, divisor = N, M
 def rice_golomb_encode(numbers: list[int], divisor: int) -> str:
@@ -267,6 +269,31 @@ def find_pos_ones(x):
     out = out[pos]
     return out
 
+@njit
+def x_tmp_matching(x, tmp, tab):
+    if (x == 1):
+        tmp_1 = tab
+    else:
+        tmp_1 = (np.logical_not(tab)).astype(np.uint8)
+        #tmp_1 = negate_x(tab, len(tab)).astype(np.uint8)
+    out = tmp*tmp_1
+    out_2 = np.sum(out)
+    return out, out_2
+
+@njit
+def find_pos_first_one(input):
+    n = len(input)
+    for j in range(n):
+        if(input[j] == 1):
+            break
+    return int(j)
+
+@njit
+def negate_x(x, cat):
+    tmp = np.ones(cat) - x
+    return tmp.astype(np.uint8) 
+
+@njit
 def jacenc(x):
     b = np.zeros(32*len(x)).astype(np.uint8)
     last = 0
@@ -306,29 +333,6 @@ def jacenc(x):
     b = b[0:last]
     return b
 
-@njit
-def x_tmp_matching(x, tmp, tab):
-    if (x == 1):
-        tmp_1 = tab
-    else:
-        tmp_1 = (np.logical_not(tab)).astype(np.uint8)
-        #tmp_1 = negate_x(tab, len(tab)).astype(np.uint8)
-    out = tmp*tmp_1
-    out_2 = np.sum(out)
-    return out, out_2
-
-@njit
-def find_pos_first_one(input):
-    n = len(input)
-    for j in range(n):
-        if(input[j] == 1):
-            break
-    return int(j)
-
-@njit
-def negate_x(x, cat):
-    tmp = np.ones(cat) - x
-    return tmp.astype(np.uint8) 
 
 @njit
 def reduce_beginning(x):

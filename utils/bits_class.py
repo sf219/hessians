@@ -57,14 +57,15 @@ def compute_bits_no_means(trans, N=8):
 
 
 def dpcm_smart(tmp):
-    fdpcm = np.zeros_like(tmp)
+    fdpcm = np.zeros_like(tmp, dtype=np.int32)
     for j in range(tmp.shape[0]):
         tmp_vec = tmp[j, :]
         tmp_vec = tmp_vec.reshape((len(tmp_vec), 1))
-        fdpcm[j, :] = dpcm(tmp_vec, 1)[0].squeeze()
+        tmp_vec = tmp_vec.astype(np.int32)
+        fdpcm[j, :] = dpcm(tmp_vec, 1).squeeze()
     top = fdpcm[:, 0]
     top = top.reshape((len(top), 1))
-    fdpcm[:, 0] = dpcm(top, 1)[0].squeeze()
+    fdpcm[:, 0] = dpcm(top, 1).squeeze()
     return fdpcm
 
 def compute_bits_omega(trans, N=8):

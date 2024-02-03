@@ -1,6 +1,6 @@
 from utils.utils_lpit import bdrate
-from my_codecs.JPEG_class import JPEG
-from my_codecs.NSQJPEG import NSQJPEG
+from my_codecs.JPEG_jax import JPEG
+from my_codecs.NSQJPEG_jax import NSQJPEG
 
 import numpy as np
 from utils.utils_lpit import read_image_resize_rect, ycbcr2rgb 
@@ -16,8 +16,8 @@ from utils.q_utils import compute_LPIPS_gs
 from utils.q_utils import ssim_func as ssim_mod
 from utils.q_utils import ms_ssim_func as ms_ssim_mod
 
-ssim_func = lambda x, y: -10*np.log10(ssim_mod(x, y))
-ms_ssim_func = lambda x, y: -10*np.log10(ms_ssim_mod(x, y))
+ssim_func = lambda x, y: ssim_mod(x, y)
+ms_ssim_func = lambda x, y: ms_ssim_mod(x, y)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -139,7 +139,6 @@ for i in range(num_images):
 
     jpeg.set_Q(img)
     nsqjpeg.set_Q(img, one_depth=True)
-    nsqjpeg.set_basis()
 
     bits_img = []
     bits_img_savc = []

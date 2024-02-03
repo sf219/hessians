@@ -1,8 +1,10 @@
 import numpy as np
-from utils.coding_library import dpcm, rlgr
+from utils.coding_library import dpcm, rlgr, jacenc
 import scipy 
-from utils.utils_lpit import reshape_image_blocks, invert_reshape_image_blocks 
-
+from utils.utils_lpit import reshape_image_blocks, invert_reshape_image_blocks, apply_zig_zag
+from utils.bits_class import dpcm_smart
+from scipy.spatial import ConvexHull
+from video_codecs.utils_avc import enc_cavlc
 
 def filter_q(Q, sigma=2):
     truncate = 3.5
@@ -22,6 +24,12 @@ def filter_q(Q, sigma=2):
     return Q_filt
 
 
+def is_sorted_increasing(lst):
+    return all(lst[i] <= lst[i + 1] for i in range(len(lst) - 1))
+
+def is_sorted_decreasing(lst):
+    return all(lst[i] >= lst[i + 1] for i in range(len(lst) - 1))
+
 class q_ops():
 
     def __init__(self, true_N, n_cwd, N, nqs=6):
@@ -29,16 +37,16 @@ class q_ops():
         self.n_cwd = n_cwd
         self.N = N
         self.nqs = nqs
-        self.n_cwds = [2, 3, 4, 5, 6, 7, 8]
+        self.n_cwds_or = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     def quantize_q(self, new_Q):
-        n_cwds = self.n_cwds
-        rdos = np.zeros((len(n_cwds)))
+        n_cwds = self.n_cwds_or.copy()
         centroids_list = []
         ind_closest_list = []
         ind_closest_420_list = []
         Q_list = []
         rate_list = []
+        SSE_list = []
         true_N = self.true_N
         N = self.N
 
@@ -60,20 +68,74 @@ class q_ops():
             ind_closest_420_list.append(ind_closest_420)
             Q_list.append(Q)
             SSE = np.sum(np.square((new_Q - Q)))
-            rate = self.compress_q(ind_closest)
+            SSE_list.append(SSE)
+            rate, _ = self.compress_q(ind_closest)
             rate_list.append(rate)
-            lambda_ = 0.85*(2**3)
-            rdos[indis] = SSE + lambda_*rate
+
+        while not is_sorted_increasing(rate_list):
+            for i in range(1, len(rate_list)):
+                if rate_list[i] < rate_list[i-1]:
+                    del rate_list[i-1]
+                    del SSE_list[i-1]
+                    del centroids_list[i-1]
+                    del ind_closest_list[i-1]
+                    del ind_closest_420_list[i-1]
+                    del Q_list[i-1]
+                    del n_cwds[i-1]
+                    break
+
+        while not is_sorted_decreasing(SSE_list):
+            for i in range(1, len(SSE_list)):
+                if SSE_list[i] > SSE_list[i-1]:
+                    del rate_list[i]
+                    del SSE_list[i]
+                    del centroids_list[i]
+                    del ind_closest_list[i]
+                    del ind_closest_420_list[i]
+                    del Q_list[i]
+                    del n_cwds[i]
+                    break
+
+        pairs = list(zip(rate_list, SSE_list))
+
+        cv_hull = ConvexHull(pairs)
+        vertices = np.sort(cv_hull.vertices)
+
+        rate_list = [rate_list[i] for i in vertices]
+        SSE_list = [SSE_list[i] for i in vertices]
+        centroids_list = [centroids_list[i] for i in vertices]
+        ind_closest_list = [ind_closest_list[i] for i in vertices]
+        ind_closest_420_list = [ind_closest_420_list[i] for i in vertices]
+        n_cwds = [n_cwds[i] for i in vertices]
+        
+        SSE_or = SSE_list[0] + SSE_list[1]
+        rate_or = rate_list[0] - rate_list[1]
+
+        lam = (SSE_list[-1] - SSE_or) / (rate_or - rate_list[-1])
+        rdos = []
+        for i in range(len(rate_list)):
+            rdos.append(SSE_list[i] + lam*rate_list[i])
+            print('n_cwd: ', n_cwds[i], 'rate: ', rate_list[i], 'SSE: ', SSE_list[i], 'RDO: ', rdos[i])
 
         self.centroids_list = centroids_list
         self.ind_closest_list = ind_closest_list
         self.ind_closest_420_list = ind_closest_420_list
         self.Q_list = Q_list
         self.rdos = rdos
-        self.n_cwds = n_cwds
         self.rate_list = rate_list
+        self.SSE_list = SSE_list
+        self.n_cwds = n_cwds
 
-    def choose_ncwd(self):
+    def choose_ncwd(self, lbr_mode=False):
+        if (lbr_mode is True):
+            index = 0
+            self.n_cwd = self.n_cwds[index]
+            self.ind_closest = self.ind_closest_list[index]
+            self.ind_closest_420 = self.ind_closest_420_list[index]
+            self.Q = self.Q_list[index]
+            self.centroids = self.centroids_list[index]
+            self.overhead_bits = self.rate_list[index]
+            return
         rdos = self.rdos
         ind = np.argmin(rdos)
         self.n_cwd = self.n_cwds[ind]
@@ -82,7 +144,6 @@ class q_ops():
         self.Q = self.Q_list[ind]
         self.centroids = self.centroids_list[ind]
         self.overhead_bits = self.rate_list[ind]
-
 
     def quantize_q_cen(self, new_Q, centroids):
         n_cwd = centroids.shape[0]
@@ -108,63 +169,45 @@ class q_ops():
                 ind_closest_420[i, j] = int(mean_tmp)
         return ind_closest, ind_closest_420, Q
 
-
     def get_centroids(self, quant_level=None):
         output = (self.centroids)
-        #for i in range(self.n_cwd):
-        #    output[i, :] = np.ones_like(output[i, :])
-        #output = np.sqrt(self.centroids)
         return output
     
     def compress_q(self, ind_closest):
-        fdpcm = np.zeros_like(ind_closest)
-        for j in range(ind_closest.shape[0]):
-            tmp = ind_closest[j, :]
-            tmp = tmp.reshape((len(tmp), 1))
-            fdpcm[j, :] = dpcm(tmp, 1)[0].squeeze()
-        top = fdpcm[:, 0]
-        top = top.reshape((len(top), 1))
-        fdpcm[:, 0] = dpcm(top, 1)[0].squeeze()
+        ind_closest = ind_closest.copy()
+        
+        unique = np.unique(ind_closest).astype(int)
+        probs = np.zeros((unique.shape[0]))
+        for i in range(unique.shape[0]):
+            probs[i] = np.mean(ind_closest == unique[i])
+        or_ind_closest = ind_closest.copy()
+        arg_inc = np.argsort(probs)[::-1]
+        for i in range(unique.shape[0]):
+            ind_closest[or_ind_closest == unique[arg_inc[i]]] = i
+
+        fdpcm = dpcm_smart(ind_closest)
         bits = np.zeros((8))
         for l in range(8):
-            bits[l] = len(rlgr(fdpcm.astype(np.int32), L = l+2))*8
+            bits[l] = len(rlgr(fdpcm.ravel('F').astype(np.int32), L=l+1))*8
+        index_min = np.argmin(bits)
+        byte_seq = rlgr(fdpcm.astype(np.int32), L=index_min+1)
         bits_1 = np.min(bits)+3
-
-        # run the most likely
         bits_2 = 0
-        array_unasigned = []
-        for i in range(ind_closest.shape[0]):
-            for j in range(ind_closest.shape[1]):
-                if (i == 0 and j == 0):
-                    most_likely = 0
-                elif (i == 0):
-                    # assign ind_closest if less than 10, or subtract 10 if more than 10
-                    most_likely = ind_closest[i, j-1] 
-                elif (j == 0):
-                    most_likely = ind_closest[i-1, j]
-                else:
-                    tmp_1 = ind_closest[i-1, j] 
-                    tmp_2 = ind_closest[i, j-1]
-                    most_likely = np.minimum(tmp_1, tmp_2)
-                if (ind_closest[i, j] == most_likely):
-                    bits_2 += 1
-                else:
-                    bits_2 += 1
-                    if (ind_closest[i, j] < most_likely):
-                        array_unasigned.append(ind_closest[i, j])
-                    else:
-                        array_unasigned.append(ind_closest[i, j]-1)
-        array_unasigned = np.asarray(array_unasigned)
-        array_unasigned = array_unasigned.reshape((len(array_unasigned), 1))
-        array_unasigned = dpcm(array_unasigned, 1)[0].squeeze()
-        bits = np.zeros((8))
-        for l in range(8):
-            bits[l] = len(rlgr(array_unasigned.astype(np.int32), L = l+1))*8 + bits_2
-        bits_2 = np.min(bits) + 3
-        print(bits_1, bits_2)
-        return np.min(np.array([bits_1, bits_2]))+1
 
-    
+        step = 4
+        # iterate in blocks of 4x4
+        for i in range(0, ind_closest.shape[0], step):
+            for j in range(0, ind_closest.shape[1], step):
+                blk = fdpcm[i:i+step, j:j+step].astype(int)
+                tmp = jacenc(blk.ravel('F'))
+                bits_2 += len(tmp)
+        print('bits_2: ', bits_2, 'bits_1: ', bits_1)
+        bits = np.minimum(bits_1, bits_2)+1
+        return bits, byte_seq
+
+    def uncompress_q(self, byte_seq):
+        pass
+
     def name_target(self):
         return 'mse'
 
@@ -179,7 +222,6 @@ class q_ops_ssim(q_ops):
 
     def __init__(self, true_N, n_cwd, N, nqs):
         super().__init__(true_N, n_cwd, N, nqs)
-        self.n_cwds = [2, 3, 4, 5, 6, 7, 8]
 
     def normalize_q(self, Q):
         Q = Q.squeeze()
@@ -214,7 +256,6 @@ class q_ops_brisque(q_ops):
     
     def __init__(self, true_N, n_cwd, N, nqs):
         super().__init__(true_N, n_cwd, N, nqs)
-        self.n_cwds = [4, 5, 6, 7]
 
     def name_target(self):
         return 'brisque'
@@ -236,7 +277,6 @@ class q_ops_niqe(q_ops):
     
     def __init__(self, true_N, n_cwd, N, nqs):
         super().__init__(true_N, n_cwd, N, nqs)
-        self.n_cwds = [4, 5, 6, 7]
 
     def name_target(self):
         return 'brisque'

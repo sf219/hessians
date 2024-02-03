@@ -2,8 +2,8 @@ import numpy as np
 from utils.utils_lpit import read_image_resize_rect
 import os
 import matplotlib.pyplot as plt
-from compute_q.compute_Q_jax import compute_Q_lpips as compute_Q
-from handling_q.q_ops import q_ops_lpips as q_ops
+from compute_q.compute_Q_jax import compute_Q_ssim as compute_Q
+from handling_q.q_ops import q_ops_ssim as q_ops
 from sklearn.cluster import KMeans
 import random
 
@@ -65,7 +65,7 @@ for img_name in dirs:
     plt.show()
     """
 
-n_cwds = [2, 3, 4, 5, 6, 7, 8]
+n_cwds = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 q_vecs_4_tmp = q_vecs_4
 q_vecs_8_tmp = q_vecs_8

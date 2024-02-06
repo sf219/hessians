@@ -1,10 +1,15 @@
 import numpy as np
-from utils.coding_library import dpcm, rlgr, jacenc
+from utils.coding_library import dpcm, rlgr, jacenc, jdcenc
 import scipy 
 from utils.utils_lpit import reshape_image_blocks, invert_reshape_image_blocks, apply_zig_zag
 from utils.bits_class import dpcm_smart
 from scipy.spatial import ConvexHull
 from video_codecs.utils_avc import enc_cavlc
+import pillow_jpls
+from PIL import Image
+import os
+import rans.rANSCoder as rANS
+import zlib
 
 def filter_q(Q, sigma=2):
     truncate = 3.5
@@ -39,7 +44,7 @@ class q_ops():
         self.nqs = nqs
         self.n_cwds_or = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    def quantize_q(self, new_Q):
+    def quantize_q(self, new_Q, img):
         n_cwds = self.n_cwds_or.copy()
         centroids_list = []
         ind_closest_list = []
@@ -62,14 +67,15 @@ class q_ops():
                     centroids = np.load('week_2/centroids/centroids_ssim_{}_{}.npy'.format(4, 256))
                 except:
                     centroids = np.load('data/centroids/centroids_ssim_{}_{}_8.npy'.format(4, (256, 256)))
-            ind_closest, ind_closest_420, Q = self.quantize_q_cen(new_Q, centroids)
-            centroids_list.append(centroids)
+            ind_closest, ind_closest_420, Q_old = self.quantize_q_cen(new_Q, centroids)
+            new_centroids, Q = self.scale_centroids(centroids, new_Q, ind_closest)
+            centroids_list.append(new_centroids)
             ind_closest_list.append(ind_closest)
             ind_closest_420_list.append(ind_closest_420)
             Q_list.append(Q)
-            SSE = np.sum(np.square((new_Q - Q)))
+            SSE = np.sum(np.square(Q - new_Q))
             SSE_list.append(SSE)
-            rate, _ = self.compress_q(ind_closest)
+            rate, _ = self.compress_q(ind_closest, n_cwd)
             rate_list.append(rate)
 
         while not is_sorted_increasing(rate_list):
@@ -96,47 +102,51 @@ class q_ops():
                     del n_cwds[i]
                     break
 
-        pairs = list(zip(rate_list, SSE_list))
+        self.SSE_or = SSE_list[0]  #np.sum(np.square(new_Q - np.mean(new_Q)))
+        self.rate_or = rate_list[0]  #np.mean(new_Q)
 
-        cv_hull = ConvexHull(pairs)
-        vertices = np.sort(cv_hull.vertices)
+        # Convex hull throws an error if there are less than 3 points
+        if len(rate_list) > 2:
+            pairs = list(zip(rate_list, SSE_list))
+            try:
+                cv_hull = ConvexHull(pairs)
+            except:
+                cv_hull = ConvexHull(pairs, qhull_options='QJ')
+                
+            vertices = np.sort(cv_hull.vertices)
 
-        rate_list = [rate_list[i] for i in vertices]
-        SSE_list = [SSE_list[i] for i in vertices]
-        centroids_list = [centroids_list[i] for i in vertices]
-        ind_closest_list = [ind_closest_list[i] for i in vertices]
-        ind_closest_420_list = [ind_closest_420_list[i] for i in vertices]
-        n_cwds = [n_cwds[i] for i in vertices]
+            rate_list = [rate_list[i] for i in vertices]
+            SSE_list = [SSE_list[i] for i in vertices]
+            centroids_list = [centroids_list[i] for i in vertices]
+            ind_closest_list = [ind_closest_list[i] for i in vertices]
+            ind_closest_420_list = [ind_closest_420_list[i] for i in vertices]
+            n_cwds = [n_cwds[i] for i in vertices]
         
-        SSE_or = SSE_list[0] + SSE_list[1]
-        rate_or = rate_list[0] - rate_list[1]
-
-        lam = (SSE_list[-1] - SSE_or) / (rate_or - rate_list[-1])
-        rdos = []
-        for i in range(len(rate_list)):
-            rdos.append(SSE_list[i] + lam*rate_list[i])
-            print('n_cwd: ', n_cwds[i], 'rate: ', rate_list[i], 'SSE: ', SSE_list[i], 'RDO: ', rdos[i])
 
         self.centroids_list = centroids_list
         self.ind_closest_list = ind_closest_list
         self.ind_closest_420_list = ind_closest_420_list
         self.Q_list = Q_list
-        self.rdos = rdos
         self.rate_list = rate_list
         self.SSE_list = SSE_list
         self.n_cwds = n_cwds
 
     def choose_ncwd(self, lbr_mode=False):
+        rdos = []
+        SSE_or = self.SSE_or
+        rate_or = self.rate_or
+
+        lam = (self.SSE_list[-1] - SSE_or) / (rate_or - self.rate_list[-1])
+
         if (lbr_mode is True):
-            index = 0
-            self.n_cwd = self.n_cwds[index]
-            self.ind_closest = self.ind_closest_list[index]
-            self.ind_closest_420 = self.ind_closest_420_list[index]
-            self.Q = self.Q_list[index]
-            self.centroids = self.centroids_list[index]
-            self.overhead_bits = self.rate_list[index]
-            return
-        rdos = self.rdos
+            lam = lam
+        else:
+            lam = lam
+
+        for i in range(len(self.rate_list)):
+            rdos.append(self.SSE_list[i] + lam*self.rate_list[i])
+            print('n_cwd: ', self.n_cwds[i], 'rate: ', self.rate_list[i], 'SSE: ', self.SSE_list[i], 'RDO: ', rdos[i])
+
         ind = np.argmin(rdos)
         self.n_cwd = self.n_cwds[ind]
         self.ind_closest = self.ind_closest_list[ind]
@@ -169,11 +179,49 @@ class q_ops():
                 ind_closest_420[i, j] = int(mean_tmp)
         return ind_closest, ind_closest_420, Q
 
+
+    def scale_centroids(self, centroids, new_Q, ind_closest):
+        #iterate over all the blocks of new_Q
+        n_cwd = centroids.shape[0]
+        N = self.N
+        true_N = self.true_N
+        avg_weight = np.zeros((n_cwd))
+        counts = np.zeros((n_cwd))
+        for i in range(0, true_N[0], N):
+            for j in range(0, true_N[1], N):
+                new_Q_blk = new_Q[i:i+N, j:j+N].ravel('F')
+                ind = ind_closest[i//N, j//N].astype(int)
+                avg_weight[ind] += np.mean(new_Q_blk)
+                counts[ind] += 1
+        avg_weight = avg_weight/counts
+        avg_weight[np.isnan(avg_weight)] = 1
+        ratio = np.zeros_like(avg_weight)
+        for i in range(n_cwd):
+            ratio[i] = avg_weight[i]/np.mean(centroids[i, :])
+        #print('ratio: ', ratio)
+        new_centroids = np.zeros(centroids.shape)
+        for i in range(n_cwd):
+            new_centroids[i, :] = centroids[i, :]*ratio[i]
+        
+        Q = np.zeros_like(new_Q)
+        for i in range(0, true_N[0], N):
+            for j in range(0, true_N[1], N):
+                Q[i:i+N, j:j+N] = new_centroids[ind_closest[i//N, j//N].astype(int), :]
+
+        normalizer = Q.size / np.sum(Q)
+
+        Q = Q * normalizer
+        
+        for i in range(n_cwd):
+            new_centroids[i, :] = new_centroids[i, :] * normalizer
+
+        return new_centroids, Q
+
     def get_centroids(self, quant_level=None):
         output = (self.centroids)
         return output
     
-    def compress_q(self, ind_closest):
+    def compress_q(self, ind_closest, n_cwd=None):
         ind_closest = ind_closest.copy()
         
         unique = np.unique(ind_closest).astype(int)
@@ -194,14 +242,16 @@ class q_ops():
         bits_1 = np.min(bits)+3
         bits_2 = 0
 
-        step = 4
-        # iterate in blocks of 4x4
-        for i in range(0, ind_closest.shape[0], step):
-            for j in range(0, ind_closest.shape[1], step):
-                blk = fdpcm[i:i+step, j:j+step].astype(int)
-                tmp = jacenc(blk.ravel('F'))
-                bits_2 += len(tmp)
-        print('bits_2: ', bits_2, 'bits_1: ', bits_1)
+        fdpcm_save = fdpcm.copy()
+        fdpcm_save[fdpcm_save<0] = (n_cwd) - fdpcm_save[fdpcm_save<0]
+        im = Image.fromarray(ind_closest.astype(np.uint8))
+        im.save('fdpcm.webp', lossless=True, quality=100)
+        read_im = Image.open('fdpcm.webp')
+        read_arr = np.array(read_im)[:, :, 0].astype(np.int32)
+        #mod_arr = read_arr.copy().astype(np.int32)
+        #mod_arr[mod_arr >= n_cwd] = -(mod_arr[mod_arr>=n_cwd] - (n_cwd))
+        bits_2 = os.stat('fdpcm.webp').st_size*8
+        #print('bits_2: ', bits_2, 'bits_1: ', bits_1, 'fdpcm: ', np.sum(np.abs(read_arr - ind_closest)))
         bits = np.minimum(bits_1, bits_2)+1
         return bits, byte_seq
 

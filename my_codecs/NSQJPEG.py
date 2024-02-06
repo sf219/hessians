@@ -6,7 +6,7 @@ from utils.utils_lpit import matlab_round
 from scipy.linalg import eigh
 from my_codecs.SIC_class import SIC
 from utils.bits_class import compute_bits, dpcm_smart
-from utils.coding_library import jacenc
+from utils.coding_library import jacenc, jdcenc
 
 # we are working with JPEG, so it's safe to set N = 8
 N = 8
@@ -76,10 +76,11 @@ def proy_Q_table(table, basis):
 
 class NSQJPEG(SIC):
 
-    def __init__(self, compute_Q_obj, q_ops_obj, nqs=12, N=8, center=True, uniform=True):
+    def __init__(self, compute_Q_obj, q_ops_obj, nqs=12, N=8, center=True, uniform=True, quant_scal=90):
         super().__init__(nqs, N, center, uniform)
         self.compute_Q_obj = compute_Q_obj
         self.q_ops_obj = q_ops_obj
+        self.quant_scal = quant_scal
 
     def compute_bits(self, trans, input=None, Q_list=None):
         tot_bits, _, bits_dc_prev = compute_bits(trans, self.N) 
@@ -104,8 +105,8 @@ class NSQJPEG(SIC):
                     produ_Q = np.ones((N, N))
                     produ_C = np.ones((N, N))
                 """
-                table_Q = qf*90*produ_Q
-                table_C = qf*90*produ_C
+                table_Q = qf*self.quant_scal*produ_Q
+                table_C = qf*self.quant_scal*produ_C
 
                 Q_inner.append(table_Q)
                 chroma_Q_inner.append(table_C)
@@ -133,9 +134,10 @@ class NSQJPEG(SIC):
         if (one_depth is True):
             if (len(input.shape) == 3):
                 input = input[:, :, 0]
+        img_quan = 2*input/255
         self.Qmtx = self.compute_Q_obj.sample_q(input)
         self.Qmtx = self.q_ops_obj.normalize_q(self.Qmtx)
-        self.q_ops_obj.quantize_q(self.Qmtx)
+        self.q_ops_obj.quantize_q(self.Qmtx, img_quan)
         self.q_ops_obj.choose_ncwd(lbr_mode)
         self.overhead_bits = self.q_ops_obj.overhead_bits
         print(' overhead bits: ', self.overhead_bits)
@@ -177,25 +179,50 @@ class NSQJPEG(SIC):
                     U_vec = self.eigvecs_list[k]
                     tmp = U_vec[:, 0].T @ Q_mtx @ blk.ravel('F') 
                     coefs_means[i//self.N, j//self.N, k] = matlab_round(128*tmp/(Q_list[k][0, 0]))
-        coefs_means_in = coefs_means
+        coefs_means_dpcm = np.zeros_like(coefs_means)
+
+        avg_coefs = np.zeros((self.q_ops_obj.n_cwd))
         for k in range(self.q_ops_obj.n_cwd):
-            coefs_means[:, :, k] = dpcm_smart(coefs_means_in[:, :, k].squeeze())
-        bits_dc = 0
+            avg_coefs[k] = np.mean(np.diag(self.q_mtx[k]))*128/Q_list[k][0, 0]
+        
+        avg_coefs = avg_coefs/np.sum(avg_coefs)
+
+        for k in range(self.q_ops_obj.n_cwd):
+            coefs_means_dpcm[:, :, k] = dpcm_smart(coefs_means[:, :, k].squeeze())
 
         # the only possible scenario when they don't match is when using 4:2:0 chroma subsampling
         if (self.ind_closest.shape[0] == coefs_means.shape[0]):
             ind_closest = self.ind_closest
+            flag_color = False
         else:
             ind_closest = self.ind_closest_420
+            flag_color = True
 
+        
+        final_coefs = np.zeros((coefs_means.shape[0], coefs_means.shape[1]))
+        for i in range(coefs_means.shape[0]):
+            for j in range(coefs_means.shape[1]):
+                pos = ind_closest[i, j].astype(int)
+                final_coefs[i, j] = coefs_means_dpcm[i, j, pos]
+        
+
+        bits_dc = len(jacenc(final_coefs.ravel('F').astype(int)))
+
+        """
         for k in range(self.q_ops_obj.n_cwd):
             pos = ind_closest == k
-            tier = coefs_means[:, :, k].squeeze()
+            tier = coefs_means_dpcm[:, :, k].squeeze()
             tocomp = tier[pos].ravel('F')
             if tocomp.size == 0:
                 continue
-            tocomp = tocomp.astype(int)
-            bits_dc += len(jacenc(tocomp))
+            # extend the array to be a multiple of 16
+            if avg_coefs[k] < 0.5 or flag_color is True:
+                tocomp = tocomp.astype(int)
+                bits_dc += len(jacenc(tocomp))
+            else:
+                for i in range(0, tocomp.size):
+                    bits_dc += len(jdcenc(np.array([tocomp[i]])))
+        """
         return bits_dc
     
 

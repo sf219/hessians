@@ -8,7 +8,7 @@ from utils.bits_class import Bits, compute_bits
 class SIC:
 
     def __init__(self, nqs=12, N=8, center=True, uniform=False):
-        self.quant, _ = get_quantization_scales(nqs, sup_val=95, inf_val=70)
+        self.quant, _ = get_quantization_scales(nqs, sup_val=90, inf_val=75)
         self.N = N
         self.nqs = nqs
         self.base_Q, self.base_C = get_quantization_table(N)
@@ -114,7 +114,8 @@ class SIC:
         bits = bits_1 + bits_2 + bits_3 + self.overhead_bits
         # stack components together
         output = (trans_y, trans_cb, trans_cr)
-        return output, bits
+        bits_arr = (bits_1 + self.overhead_bits, bits_2, bits_3)
+        return output, bits, bits_arr
 
     def uncompress_420(self, trans, ind_qual):
         Q_list = self.Q[ind_qual]

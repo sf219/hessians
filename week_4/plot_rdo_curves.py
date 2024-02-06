@@ -79,32 +79,27 @@ for i in range(num_images):
     der_der = der[0:-1]*np.arange(deg-1, 0, -1)
     der_p_p = np.poly1d(der_der)
 
-    plt.figure()
-    plt.plot(rate_list, SSE_list, 'o', label='Original data')
-    x_axis = np.linspace(min(rate_list), max(rate_list), 100)
-    plt.plot(x_axis, der_p(x_axis), label='Fit der')
-    plt.plot(x_axis, der_p_p(x_axis), label='Fit der der')
-    plt.plot(x_axis, p(x_axis), label='Fit')
-    plt.xlabel('Rate', fontsize=16)
-    plt.ylabel('SSE', fontsize=16)
-    plt.legend(fontsize=16)
-    plt.title('Rate vs SSE', fontsize=16)
+    SSE_or = SSE_list[0]  #np.sum(np.square(new_Q - np.mean(new_Q)))
+    rate_or = rate_list[0]  #np.mean(new_Q)
 
-    plt.figure()
-    plt.plot(rate_list, SSE_list, 'o', label='Original data')
-    x_axis = np.linspace(min(rate_list), max(rate_list), 100)
-    plt.plot(x_axis, p(x_axis), label='Fit')
-    plt.xlabel('Rate', fontsize=16)
-    plt.ylabel('SSE', fontsize=16)
-    plt.legend(fontsize=16)
-    plt.title('Rate vs SSE', fontsize=16)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
+    lam = (SSE_list[-1] - SSE_or) / (rate_or - rate_list[-1])
+    rdos = np.asarray(SSE_list) + lam*np.asarray(rate_list)
+
+    ind = np.argmin(rdos)
 
     plt.figure()
     plt.plot(rate_list, 10*np.log10(SSE_list), 'o', label='Original data')
     x_axis = np.linspace(min(rate_list), max(rate_list), 100)    
-    plt.plot(np.array(rate_list)[vertices], 10*np.log10(np.array(SSE_list)[vertices]), '--', lw=2, label='Convex Hull')
+
+    y_line = SSE_list[0] + (rate_list[0] - rate_list[-1])*x_axis
+
+    plt.pl
+    ot(np.array(rate_list)[vertices], (np.array(SSE_list)[vertices]), '--', lw=2, label='Convex Hull')
+    plt.plot(x_axis, y_line, label='Slope')
+
+    new_y_line = SSE_list[0] + (rate_list[0] - rate_list[-1])*x_axis - SSE_list[ind]
+
+    plt.plot(x_axis, new_y_line, label='Slope - SSE_min')
     plt.xlabel('Rate', fontsize=16)
     plt.ylabel('SSE', fontsize=16)
     plt.legend(fontsize=16)

@@ -137,7 +137,7 @@ class NSQJPEG(SIC):
                 input = input[:, :, 0]
         self.Qmtx = self.compute_Q_obj.sample_q(input)
         self.Qmtx = self.q_ops_obj.normalize_q(self.Qmtx)
-        self.q_ops_obj.quantize_q(self.Qmtx)
+        self.q_ops_obj.quantize_q(self.Qmtx, input)
         self.q_ops_obj.choose_ncwd()
         self.overhead_bits = self.q_ops_obj.overhead_bits
         print(' overhead bits: ', self.overhead_bits)

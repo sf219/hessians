@@ -12,3 +12,10 @@ sketch/simul_tmps/*
 *.pth
 *.mat
 *.ckpt
+*.jls
+*.webp
+*.png
+*.jpg
+*.jpeg
+*.gif
+

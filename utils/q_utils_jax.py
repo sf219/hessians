@@ -157,3 +157,18 @@ def compute_LPIPS_gs(img1, img2):
     return lpips
 
 
+@jax.jit
+def compute_LPIPS_color(img1, img2):
+    img1 = img1.squeeze()
+    img2 = img2.squeeze()
+    true_N = img1.shape
+    img1 = img1.transpose(2, 0, 1)
+    img1 = img1.reshape(1, 3, true_N[0], true_N[1])
+    img1 = jnp.array(img1).transpose(0, 2, 3, 1)
+    img2 = img2.transpose(2, 0, 1)
+    img2 = img2.reshape(1, 3, true_N[0], true_N[1])
+    img2 = jnp.array(img2).transpose(0, 2, 3, 1)
+    lpips = lp_jax(img1, img2)
+    lpips = lpips[0][0][0][0]
+    return lpips
+

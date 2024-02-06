@@ -47,12 +47,15 @@ class SIC:
 
     def compress_method(self, input, Q_list, flag_half=False):
 
+        @jax.jit
         def quant_layer(quant_blk: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.quant_layer(quant_blk, Q_list, ind)
         
+        @jax.jit
         def trans_layer(input: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.fwd_transform(input, ind)
         
+        @jax.jit
         def zig_zag_layer(quant_blk: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.zig_zag_func(quant_blk, ind)
 
@@ -86,12 +89,15 @@ class SIC:
     def uncompress_method(self, trans, Q_list, flag_half=False):
         #convert trans to float
 
+        @jax.jit
         def dequant_layer(quant_blk: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.dequant_layer(quant_blk, Q_list, ind)
         
+        @jax.jit
         def inv_zig_zag_layer(quant_blk: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.inv_zig_zag_func(quant_blk, ind)
         
+        @jax.jit
         def inv_trans_layer(input: jnp.ndarray, ind: jnp.int32) -> jnp.ndarray:
             return self.inv_transform(input, ind)
 
@@ -144,7 +150,8 @@ class SIC:
         bits = bits_1 + bits_2 + bits_3 + self.overhead_bits
         # stack components together
         output = (trans_y, trans_cb, trans_cr)
-        return output, bits
+        bits_arr = (bits_1 + self.overhead_bits, bits_2, bits_3)
+        return output, bits, bits_arr
 
     def uncompress_420(self, trans, ind_qual):
         Q_list = self.Q[ind_qual]

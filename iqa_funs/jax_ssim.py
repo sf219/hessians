@@ -1,6 +1,8 @@
 import jax.scipy as jsp
 import jax
 import jax.numpy as jnp
+from skimage.metrics import structural_similarity as ssim
+import numpy as np
 
 def preprocess(img, win_size=9):
     pad_int = (win_size-1)//2
@@ -10,9 +12,24 @@ def preprocess(img, win_size=9):
 
 @jax.jit
 def jax_ssim(img1, img2):
+    img1 = img1.squeeze()
+    img2 = img2.squeeze()
     mssim, _ = _jax_ssim(img1, img2)
     return 1-mssim
 
+
+def jax_ssim_eval(img1, img2):
+    img1 = img1.squeeze()
+    img2 = img2.squeeze()
+    F = jnp.maximum(1, img1.shape[0]//256)
+    kernel = jnp.ones((F, F))
+    kernel = kernel/jnp.sum(kernel)
+    img1 = jsp.signal.convolve(img1, kernel, mode='valid')[::F, ::F]
+    img2 = jsp.signal.convolve(img2, kernel, mode='valid')[::F, ::F]
+    img1 = np.array(img1)
+    img2 = np.array(img2)
+    mssim = ssim(img1, img2, data_range=2, gaussian_weights=True)
+    return 1-mssim
 
 @jax.jit
 def just_cs(img1, img2):
